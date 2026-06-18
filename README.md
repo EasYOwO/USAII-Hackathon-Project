@@ -1,22 +1,51 @@
-# Report Workflow Hackthon
+# Report Workflow Hackathon
 
-Node.js 22 web app for report workflows:
+Next.js 15 application for report and assistance workflows. The frontend pages and backend API routes run in one Node.js 22 service on port `8000`.
 
-- `Senior Application Assistant` (`/assistant`): bilingual English/Chinese senior-friendly flow for language choice, basic information, form matching, draft filling, consent, volunteer verification, and SMS preview.
-- `Form Fill` (`/fill`): WhatsApp-style chatbot with text and voice input. The chatbot asks 3 questions, then fills and shows the result table.
-- `Navigator` (`/navigate`): WhatsApp-style chatbot with text and voice input. The chatbot asks 3 report-search questions, then shows matching reports.
-- `Form Viewer` (`/view`): file-explorer PDF management, upload, preview, page extraction, page deletion, merge, download, and PVC/local save.
-- `user-management`: simple `user` / `admin` list and add-user flow stored in PVC/local JSON.
+## What It Includes
 
-The app uses one Next.js service for both frontend pages and backend API routes. Port `8000` is the main and only required port.
-The UI includes selectable Light and Dark themes using the supplied soft glassmorphism palette.
+- `Senior Application Assistant` (`/assistant`): guided bilingual flow for senior-friendly assistance intake, form matching, draft review, consent, volunteer follow-up, and SMS preview.
+- `Form Fill` (`/fill`): WhatsApp-style form-filling chatbot with text and voice input, session storage, optional Gemini AI, form matching, and completion notification hooks.
+- `Navigator` (`/navigate`): chatbot-assisted report search that asks guided questions, extracts keywords, and returns matching reports.
+- `Form Viewer` (`/view`): PDF workspace for upload, preview, page extraction, page deletion, merge, download, and PVC/local save.
+- `User Management` (`/user-management`): simple user/admin list and add-user flow backed by local/PVC JSON.
+- `Health API` (`/api/health`): lightweight endpoint for local checks and Docker healthchecks.
+
+The app works without external API keys. When `GEMINI_API_KEY`, Twilio, or SendGrid values are missing, the backend uses mock AI responses and logs notification messages for development.
 
 ## Requirements
 
-- Node.js 22
-- npm 10+
+- Node.js `22.x`
+- npm `10+`
+- Docker Desktop, optional for container runs
 
-## Run locally
+## Environment
+
+Create local environment settings from the example when you want optional integrations:
+
+```bash
+copy .env.example .env.local
+```
+
+Important variables:
+
+```text
+PORT=8000
+HOSTNAME=0.0.0.0
+PVC_ROOT=storage/pvc
+GEMINI_API_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
+SENDGRID_API_KEY=
+SENDGRID_FROM_EMAIL=noreply@government-assistance.my
+```
+
+`PVC_ROOT` controls where runtime PDFs, users, and sessions are stored. In Docker it defaults to `/app/storage/pvc` and should be backed by a volume.
+
+## Run Locally
+
+Install dependencies and start the dev server:
 
 ```bash
 npm install
@@ -29,13 +58,43 @@ Open:
 http://localhost:8000
 ```
 
+Check the API:
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+Production-style local run:
+
+```bash
+npm run build
+npm start
+```
+
 ## Docker
 
-Build and run:
+Build the production image:
 
 ```bash
 docker build -t report-workflow-hackthon:latest .
+```
+
+Run without provider keys:
+
+```bash
 docker run --rm -p 8000:8000 -v report-pvc:/app/storage/pvc report-workflow-hackthon:latest
+```
+
+Run with local environment variables:
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env.local -v report-pvc:/app/storage/pvc report-workflow-hackthon:latest
+```
+
+Check the running container:
+
+```bash
+curl http://localhost:8000/api/health
 ```
 
 Push example:
@@ -45,87 +104,96 @@ docker tag report-workflow-hackthon:latest <registry>/<namespace>/report-workflo
 docker push <registry>/<namespace>/report-workflow-hackthon:latest
 ```
 
-## Project layout
+Docker notes:
+
+- The image uses `node:22-alpine`.
+- The runtime runs as a non-root `nextjs` user.
+- `/app/storage/pvc` is declared as a volume.
+- The image has a healthcheck that calls `/api/health`.
+- `.env*` files are ignored by Docker except `.env.example`, so secrets are not copied into the build context.
+
+## Scripts
 
 ```text
-app/                         Next.js App Router pages and HTTP API routes.
-app/page.tsx                 Main page. This is the dashboard.
-app/dashboard/               Redirects to `/` so there is only one dashboard entry.
-app/login/                   Simple demo login. Only the user's name is required.
-app/assistant/               Senior-friendly application assistant flow.
-app/fill/                    Fill page route. Imports the UI from `fill/`.
-app/navigate/                Navigate page route. Imports the UI from `navigate/`.
-app/view/                    PDF workspace page route. Imports the UI from `view/`.
-app/user-management/         User management page route for user/admin accounts.
-app/api/auth/                Login API.
-app/api/elderly/             Senior assistant APIs for form search and draft packages.
-app/api/fill/                Fill chatbot APIs: questions, chat result, and AI insight.
-app/api/navigate/            Navigate chatbot APIs: questions, search, and AI insight.
-app/api/pdf/                 PDF APIs: list, upload, view/download, merge, extract pages, delete pages.
-app/api/users/               User management API backed by PVC/local JSON. Roles are only `user` or `admin`.
-
-backend/                     Server-side business helpers used by `app/api/`.
-backend/elderly/forms.ts     Local assistance form catalog, eligibility rules, draft package, and SMS text.
-backend/fill/chatbot.ts      Fill chatbot backend. Owns 3 questions, answer parsing, result filling, and insight text.
-backend/navigate/chatbot.ts  Navigate chatbot backend. Owns 3 questions, keyword extraction, search reply, and insight text.
-backend/reports.ts           Local demo report records and report search helper.
-backend/pdf.ts               PDF helper functions for upload, merge, extract pages, and delete pages.
-backend/storage.ts           PVC/local storage paths, JSON helpers, and PDF listing.
-
-components/                  Shared UI components.
-components/TopNav.tsx        Main navigation bar.
-components/ThemeToggle.tsx   Light/dark theme selector.
-components/VoiceComposer.tsx WhatsApp-like text input with microphone speech-to-text support.
-
-fill/                        Fill workflow frontend UI.
-fill/FillClient.tsx          Fill chatbot screen and result table.
-navigate/                    Navigate/search workflow frontend UI.
-navigate/NavigateClient.tsx  Navigate chatbot screen and report results.
-view/                        PDF view/edit workflow frontend UI.
-view/ViewClient.tsx          PDF explorer, preview, merge, extract, delete, upload, and download UI.
-user-management/             User management frontend UI.
-user-management/UserManagementClient.tsx Add/list demo users with `user` or `admin` role.
-
-public/icon/1                Reserved PNG folder for fill icons.
-public/icon/2                Reserved PNG folder for navigate icons.
-public/icon/3                Reserved PNG folder for view icons.
-storage/pvc                  Runtime PVC/local data. Ignored by git.
+npm run dev        Start Next.js on port 8000.
+npm run typecheck  Run TypeScript without emitting files.
+npm run build      Build the standalone Next.js production server.
+npm start          Start the standalone production server on port 8000.
 ```
 
-Frontend workflow folders such as `fill/`, `navigate/`, `view/`, and `user-management/` should only contain UI.
-Backend chatbot logic should stay in `backend/fill/` and `backend/navigate/`.
-HTTP endpoints stay under `app/api/`.
+## Project Layout
 
-The two chatbot backends are separated:
+```text
+app/                         Next.js App Router pages and API routes.
+app/page.tsx                 Dashboard.
+app/assistant/               Senior application assistant page.
+app/fill/                    Fill chatbot page.
+app/navigate/                Navigator chatbot page.
+app/view/                    PDF workspace page.
+app/user-management/         User/admin management page.
+app/api/                     Backend HTTP routes.
 
-- `backend/fill/chatbot.ts`: fill chatbot for extracting form fields and returning table data.
-- `backend/navigate/chatbot.ts`: navigate chatbot for asking three questions, extracting keywords, and preparing report search results.
+backend/                     Server-side workflow helpers.
+backend/ai-service.ts        Optional Gemini integration with mock fallback.
+backend/form-matcher.ts      Assistance form matching rules.
+backend/notifications.ts     Twilio/SendGrid hooks with development logging.
+backend/fill/                Fill chatbot and session manager.
+backend/navigate/            Navigator chatbot logic.
+backend/elderly/             Senior assistant form catalog and draft builder.
+backend/pdf.ts               PDF upload, merge, extract, and delete helpers.
+backend/storage.ts           PVC/local storage helpers.
 
-HTTP endpoints live under `app/api/`. The main chatbot endpoints are:
+components/                  Shared UI components.
+fill/                        Fill workflow frontend.
+navigate/                    Navigator workflow frontend.
+view/                        PDF workspace frontend.
+user-management/             User management frontend.
+storage/pvc/                 Runtime data, ignored by Git.
+```
 
-- `POST /api/fill/chat`
-- `POST /api/fill/insights`
-- `GET /api/fill/questions`
-- `GET /api/navigate/questions`
-- `POST /api/navigate/search`
-- `POST /api/navigate/insights`
+## Main API Routes
 
-The current port model is one service only: frontend pages and backend API routes both run on `8000`.
+```text
+GET  /api/health
+POST /api/auth/login
 
-## AI placeholders
+POST /api/elderly/forms/search
+POST /api/elderly/application
 
-Chatbot, question generation, and keyword extraction are currently deterministic backend stubs. Fill and Navigate are split into separate backend modules, so a real AI provider can be added to one chatbot without changing the other frontend flow.
+GET  /api/fill/questions
+POST /api/fill/session
+POST /api/fill/chat
+POST /api/fill/forms/search
+GET  /api/fill/forms/[formId]?sessionId=<sessionId>
+POST /api/fill/complete
+POST /api/fill/insights
 
-Both chatbot flows include an AI insight button. The backend returns a short spoken-style summary plus structured highlights; the frontend can read the summary aloud using the browser speech API.
+GET  /api/navigate/questions
+POST /api/navigate/search
+POST /api/navigate/insights
 
-## PDF API
+GET  /api/pdf/files
+POST /api/pdf/upload
+POST /api/pdf/merge
+POST /api/pdf/extract-pages
+POST /api/pdf/delete-pages
+GET  /api/pdf/files/[filename]
+GET  /api/pdf/files/[filename]?download=1
 
-- `GET /api/pdf/files` lists local/PVC PDFs.
-- `POST /api/pdf/upload` uploads PDFs to PVC.
-- `POST /api/pdf/merge` merges uploaded or generated PDFs.
-- `POST /api/pdf/extract-pages` keeps selected pages.
-- `POST /api/pdf/delete-pages` removes selected pages.
-- `GET /api/pdf/files/:filename` views a PDF.
-- `GET /api/pdf/files/:filename?download=1` downloads a PDF.
+GET  /api/users
+POST /api/users
+GET  /api/reports/[id]
+GET  /api/favorites
+POST /api/favorites
+```
 
-The PDF UI does not show or generate sample PDFs. The PVC PDF folder starts empty unless users upload files or later AI/backend code saves files there. Users upload a local PDF or open a saved PVC PDF before preview/edit/download.
+## Verification
+
+Current verified commands:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+Both commands should pass before Docker builds or deployment.

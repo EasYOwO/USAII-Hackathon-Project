@@ -6,9 +6,8 @@
 import type {
   ChatResponse,
   DialogState,
-  FillInsight,
   GeminiAIResponse,
-  Language,
+  Language as AppLanguage,
   Message,
   UserProfile,
   UserSession,
@@ -40,9 +39,9 @@ export type FillInsight = {
 
 // ============== Legacy API (maintained for frontend compatibility) ==============
 const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-type Language = 'en' | 'zh';
+type LegacyLanguage = 'en' | 'zh';
 
-export function fillQuestions(userName = 'Ali', language: Language = 'en'): FillQuestion[] {
+export function fillQuestions(userName = 'Ali', language: LegacyLanguage = 'en'): FillQuestion[] {
   const safeName = userName.trim() || 'Ali';
   const emailName = safeName.toLowerCase().replace(/[^a-z0-9]+/g, '.');
 
@@ -85,7 +84,7 @@ export function fillQuestions(userName = 'Ali', language: Language = 'en'): Fill
   ];
 }
 
-export function fillFromMessage(message: string, language: Language = 'en'): FillRecord {
+export function fillFromMessage(message: string, language: LegacyLanguage = 'en'): FillRecord {
   const email = message.match(emailPattern)?.[0] ?? 'ali@example.com';
   const name = /\bali\b/i.test(message) ? 'Ali' : 'Ali';
   const id = message.match(/\b\d{5,12}\b/)?.[0] ?? '1234567';
@@ -98,7 +97,7 @@ export function fillFromMessage(message: string, language: Language = 'en'): Fil
   };
 }
 
-export function fillFromAnswers(answers: Partial<Record<FillQuestion['id'], string>>, language: Language = 'en'): FillRecord {
+export function fillFromAnswers(answers: Partial<Record<FillQuestion['id'], string>>, language: LegacyLanguage = 'en'): FillRecord {
   const name = answers.name?.trim() || 'Ali';
   const emailCandidate = answers.email?.trim() || '';
   const idCandidate = answers.id?.trim() || '';
@@ -111,14 +110,14 @@ export function fillFromAnswers(answers: Partial<Record<FillQuestion['id'], stri
   };
 }
 
-export function fillReply(record: FillRecord, language: Language = 'en') {
+export function fillReply(record: FillRecord, language: LegacyLanguage = 'en') {
   if (language === 'zh') {
     return `我已把草稿填好：姓名 ${record.name}，电邮 ${record.email}，ID ${record.id}。`;
   }
   return `I filled the draft with name ${record.name}, email ${record.email}, and ID ${record.id}.`;
 }
 
-export function buildFillInsight(record: FillRecord, messages: string[] = [], language: Language = 'en'): FillInsight {
+export function buildFillInsight(record: FillRecord, messages: string[] = [], language: LegacyLanguage = 'en'): FillInsight {
   const missingFields = [
     record.name ? '' : 'Name',
     record.email ? '' : 'Email',
@@ -161,7 +160,7 @@ export function buildFillInsight(record: FillRecord, messages: string[] = [], la
 export async function processUserMessage(
   sessionId: string,
   userMessage: string,
-  language: Language = 'zh_CN',
+  language: AppLanguage = 'zh_CN',
 ): Promise<ChatResponse> {
   // Get or create session
   let session = await SessionManager.getSession(sessionId);
@@ -176,7 +175,7 @@ export async function processUserMessage(
   // Get message history for AI context
   const messageHistory = await SessionManager.getMessageHistory(sessionId, 10);
   const geminiMessages: Parameters<typeof geminiAIService.callGemini>[0] = messageHistory.map((msg) => ({
-    role: msg.role,
+    role: msg.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: msg.content }],
   }));
 
@@ -233,7 +232,7 @@ export async function processAudioMessage(
   sessionId: string,
   audioData: string, // Base64
   mimeType: string,
-  language: Language = 'zh_CN',
+  language: AppLanguage = 'zh_CN',
 ): Promise<ChatResponse> {
   let session = await SessionManager.getSession(sessionId);
 
@@ -245,7 +244,7 @@ export async function processAudioMessage(
 
   const messageHistory = await SessionManager.getMessageHistory(sessionId, 10);
   const geminiMessages: Parameters<typeof geminiAIService.callGemini>[0] = messageHistory.map((msg) => ({
-    role: msg.role,
+    role: msg.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: msg.content }],
   }));
 

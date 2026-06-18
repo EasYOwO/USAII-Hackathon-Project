@@ -6,6 +6,8 @@ uploads
 .git
 .vscode
 .idea
+.env*
+!.env.example
 *.log
 defect-classification
 defect-classification.zip

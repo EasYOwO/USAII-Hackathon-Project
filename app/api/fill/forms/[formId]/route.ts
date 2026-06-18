@@ -6,6 +6,7 @@
 
 import { SessionManager } from '@/backend/fill/session-manager';
 import { FormMatcher } from '@/backend/form-matcher';
+import type { Language } from '@/backend/types';
 
 export const runtime = 'nodejs';
 
@@ -23,7 +24,7 @@ export async function GET(
     }
 
     // Get session to determine language
-    let language: any = 'zh_CN';
+    let language: Language = 'zh_CN';
     if (sessionId) {
       const session = await SessionManager.getSession(sessionId);
       if (session) {

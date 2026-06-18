@@ -28,5 +28,6 @@ COPY --from=builder /app/.next/static ./.next/static
 USER nextjs
 EXPOSE 8000
 VOLUME ["/app/storage/pvc"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD wget -qO- http://127.0.0.1:8000/api/health >/dev/null || exit 1
 
 CMD ["node", "server.js"]

@@ -1,20 +1,42 @@
-import { processUserMessage, processAudioMessage } from '@/backend/fill/chatbot';
+import {
+  fillFromAnswers,
+  fillReply,
+  processAudioMessage,
+  processUserMessage,
+} from '@/backend/fill/chatbot';
+import type { Language } from '@/backend/types';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
-      sessionId: string;
+      sessionId?: string;
       message?: string;
+      answers?: Partial<Record<'name' | 'email' | 'id', string>>;
       audioData?: {
         data: string; // Base64
         mimeType: string;
       };
-      language?: 'zh_CN' | 'ms_MY' | 'en_US';
+      language?: Language | 'en' | 'zh';
     };
 
-    const { sessionId, message, audioData, language = 'zh_CN' } = body;
+    const { sessionId, message, audioData } = body;
+
+    if (body.answers) {
+      const legacyLanguage = body.language === 'zh' || body.language === 'zh_CN' ? 'zh' : 'en';
+      const record = fillFromAnswers(body.answers, legacyLanguage);
+
+      return Response.json({
+        reply: fillReply(record, legacyLanguage),
+        record,
+        extractedData: record,
+        confidence: 'High',
+      });
+    }
+
+    const language: Language =
+      body.language === 'ms_MY' ? 'ms_MY' : body.language === 'en_US' || body.language === 'en' ? 'en_US' : 'zh_CN';
 
     if (!sessionId) {
       return Response.json({ error: 'sessionId is required' }, { status: 400 });
