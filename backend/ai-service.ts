@@ -8,7 +8,7 @@ import type { GeminiAIResponse, Language, DialogState, UserProfile } from './typ
 import { SYSTEM_PROMPTS, generateContextPrompt } from './prompts';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 export function isGeminiConfigured() {

@@ -477,7 +477,7 @@ A: 编辑 `backend/form-matcher.ts`，按照现有表格格式在 `FORMS_DATABAS
 A: 编辑 `backend/prompts.ts` 中的 `SYSTEM_PROMPTS` 和状态特定提示词。
 
 **Q: 音频支持哪些格式？**
-A: Gemini 1.5 支持 WAV、MP3、WebM 等。前端 `VoiceComposer` 需要配置为录制相应格式。
+A: Gemini 3 支持 WAV、MP3、WebM 等。前端 `VoiceComposer` 需要配置为录制相应格式。
 
 **Q: 会话数据会被删除吗？**
 A: 默认保留 30 天，可通过 `SessionManager.cleanupExpiredSessions()` 手动清理。
