@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { ensureStorage, pdfRoot, safeFileName } from './storage';
@@ -95,4 +95,54 @@ export async function deletePages(fileName: string, selection: string) {
   const outputName = safeFileName(`deleted-pages-${Date.now()}.pdf`);
   await writeFile(path.join(pdfRoot, outputName), await output.save());
   return outputName;
+}
+
+async function embedImageBytes(pdf: PDFDocument, bytes: Buffer) {
+  try {
+    return await pdf.embedPng(bytes);
+  } catch {
+    return await pdf.embedJpg(bytes);
+  }
+}
+
+export async function createIdDocumentPdf(frontBytes: Buffer, backBytes: Buffer, username: string) {
+  await ensureStorage();
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([595.28, 841.89]);
+  const { width, height } = page.getSize();
+  const margin = 24;
+  const slotHeight = (height - margin * 3) / 2;
+
+  const frontImage = await embedImageBytes(pdf, frontBytes);
+  const backImage = await embedImageBytes(pdf, backBytes);
+
+  const drawFitted = (image: Awaited<ReturnType<typeof embedImageBytes>>, y: number) => {
+    const scale = Math.min((width - margin * 2) / image.width, slotHeight / image.height);
+    const drawWidth = image.width * scale;
+    const drawHeight = image.height * scale;
+    page.drawImage(image, {
+      x: (width - drawWidth) / 2,
+      y,
+      width: drawWidth,
+      height: drawHeight,
+    });
+  };
+
+  drawFitted(frontImage, height - margin - slotHeight);
+  drawFitted(backImage, margin);
+
+  const safeUser = username.trim().replace(/[^a-zA-Z0-9_-]+/g, '-') || 'user';
+  const outputName = safeFileName(`ID-${safeUser}.pdf`);
+  await writeFile(path.join(pdfRoot, outputName), await pdf.save());
+  return outputName;
+}
+
+export async function deletePdfFile(fileName: string) {
+  await ensureStorage();
+  const safeName = safeFileName(fileName);
+  if (!safeName.startsWith('ID-')) {
+    throw new Error('Only temporary ID documents can be deleted.');
+  }
+  await unlink(path.join(pdfRoot, safeName));
+  return safeName;
 }

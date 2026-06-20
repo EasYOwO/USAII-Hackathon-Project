@@ -94,7 +94,7 @@ export function FillClient() {
       
       if (payload.reply) {
         setMessages((current) => [...current, { role: 'assistant', content: payload.reply }]);
-        speak(payload.reply, language);
+        speak(payload.reply, language === 'zh' ? 'zh' : 'en');
       }
       if (payload.extractedData) {
         setRecord(payload.extractedData);
@@ -118,7 +118,7 @@ export function FillClient() {
     });
     const data = await response.json();
     setInsight(data.insight);
-    speak(data.insight.spokenSummary, language);
+    speak(data.insight.spokenSummary, language === 'zh' ? 'zh' : 'en');
   }
 
   return (

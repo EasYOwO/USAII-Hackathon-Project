@@ -1,66 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
-const userStorageKey = 'report-workflow-user';
+const allowedPaths = ['/assistant'];
 
-const publicPaths = ['/login'];
-const protectedPaths = ['/assistant', '/view', '/fill', '/navigate', '/user-management'];
-
-function hasSession() {
-  if (typeof window === 'undefined') return false;
-  return Boolean(localStorage.getItem(userStorageKey));
-}
-
-export function RequireLogin({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    if (!hasSession()) {
-      router.replace('/login');
-      return;
-    }
-    setReady(true);
-  }, [router]);
-
-  if (!ready) return null;
-  return <>{children}</>;
-}
-
-export function RedirectIfLoggedIn({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    if (hasSession()) {
-      router.replace('/assistant');
-      return;
-    }
-    setReady(true);
-  }, [router]);
-
-  if (!ready) return null;
-  return <>{children}</>;
-}
-
-export function LockToAssistant() {
+export function ChatOnlyGuard() {
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (publicPaths.includes(pathname)) return;
-
-    if (pathname === '/' || pathname === '/dashboard') {
-      router.replace(hasSession() ? '/assistant' : '/login');
-      return;
-    }
-
-    if (protectedPaths.includes(pathname) && !hasSession()) {
-      router.replace('/login');
-    }
+    if (allowedPaths.includes(pathname)) return;
+    router.replace('/assistant');
   }, [pathname, router]);
+
+  return null;
+}
+
+export function SessionCleanup() {
+  useEffect(() => {
+    function clearSession() {
+      const idFileName = sessionStorage.getItem('elderly-id-file');
+      if (idFileName) {
+        fetch(`/api/pdf/files/${encodeURIComponent(idFileName)}`, { method: 'DELETE', keepalive: true }).catch(() => undefined);
+      }
+      sessionStorage.removeItem('elderly-flow-active');
+      sessionStorage.removeItem('report-workflow-language');
+      sessionStorage.removeItem('elderly-id-file');
+      localStorage.removeItem('report-workflow-user');
+    }
+    window.addEventListener('beforeunload', clearSession);
+    window.addEventListener('pagehide', clearSession);
+    return () => {
+      window.removeEventListener('beforeunload', clearSession);
+      window.removeEventListener('pagehide', clearSession);
+    };
+  }, []);
 
   return null;
 }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { LockToAssistant } from '@/components/AuthGuard';
+import { ChatOnlyGuard, SessionCleanup } from '@/components/AuthGuard';
 import { LanguageProvider } from '@/components/LanguageProvider';
 import './globals.css';
 
@@ -23,7 +23,8 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <LanguageProvider>
-          <LockToAssistant />
+          <SessionCleanup />
+          <ChatOnlyGuard />
           {children}
         </LanguageProvider>
       </body>

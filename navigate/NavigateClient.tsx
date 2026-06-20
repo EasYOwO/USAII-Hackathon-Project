@@ -145,7 +145,7 @@ export function NavigateClient() {
     });
     const data = await response.json();
     setInsight(data.insight);
-    speak(data.insight.spokenSummary, language);
+    speak(data.insight.spokenSummary, language === 'zh' ? 'zh' : 'en');
   }
 
   async function saveFavorite(report: ReportResult) {

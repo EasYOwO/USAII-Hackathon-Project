@@ -2,6 +2,7 @@ export type AssistantLanguage = 'en' | 'zh';
 
 export type ApplicantProfile = {
   name?: string;
+  icNumber?: string;
   phone?: string;
   age?: string;
   state?: string;
@@ -94,6 +95,7 @@ export type ApplicationPackage = {
   form: LocalizedForm;
   applicantName: string;
   phone: string;
+  icNumber: string;
   fields: Array<{
     id: string;
     label: string;
@@ -117,16 +119,16 @@ const sectionOrder: ApplicationSection[] = ['personal', 'address', 'household', 
 
 const commonConsentItems: LocalizedText[] = [
   {
-    en: 'I agree that this application draft can be submitted to the relevant assistance desk after final human verification.',
-    zh: '我同意这份申请草稿可在人工最终确认后提交给相关援助单位。',
+    en: 'I agree that this application draft can be prepared for review before any official submission.',
+    zh: '我同意网站先为我准备申请草稿，正式提交前还需要进一步确认。',
   },
   {
-    en: 'I authorize the assistance desk to verify my household and eligibility information with relevant third parties where required.',
-    zh: '我授权援助单位在需要时向相关第三方核对我的家庭与资格资料。',
+    en: 'I authorize relevant parties to verify my household, eligibility, and supporting information where required.',
+    zh: '我授权相关单位在需要时核对我的家庭、资格与证明资料。',
   },
   {
-    en: 'I understand that the assigned volunteer must keep my personal information confidential and use it only for this application.',
-    zh: '我了解被分配的志愿者必须保密我的个人资料，并只可用于这次申请。',
+    en: 'I agree that the information provided are accurate and legitimate. The information will be reviewed by members of the Malaysian Translator Association working as translation executive within the government sector.',
+    zh: '我同意所提供的资料准确且真实。资料将由马来西亚翻译协会在政府部门担任翻译执行员的成员审核。',
   },
 ];
 
@@ -151,6 +153,17 @@ const baseFields: ApplicationField[] = [
     },
     section: 'personal',
     profileKey: 'phone',
+    required: true,
+  },
+  {
+    id: 'icNumber',
+    label: { en: 'IC / ID number', zh: '身份证号码' },
+    question: {
+      en: 'What is your IC or ID number?',
+      zh: '请问您的身份证号码是什么？',
+    },
+    section: 'personal',
+    profileKey: 'icNumber',
     required: true,
   },
   {
@@ -298,8 +311,8 @@ export const assistanceForms: AssistanceForm[] = [
       { en: 'Requires identity, address, and income proof.', zh: '需要身份证明、住址证明和收入证明。' },
     ],
     simpleExplanation: {
-      en: 'This form is for seniors who need help with daily living costs. If your age and income match, a volunteer will check your documents before submission.',
-      zh: '这份表格适合需要生活费帮助的长者。如果您的年龄和收入符合，志愿者会先核对文件才提交。',
+      en: 'This form is for seniors who need help with daily living costs. It focuses on identity, age, income, and supporting documents.',
+      zh: '这份表格适合需要生活费帮助的长者，重点核对身份、年龄、收入和所需文件。',
     },
     legalNotes: [
       {
@@ -323,8 +336,8 @@ export const assistanceForms: AssistanceForm[] = [
         zh: '点击右上角绿色方形按钮「申请进度」。',
       },
       {
-        en: 'Enter your phone number and reference ID, then tap "Search".',
-        zh: '输入电话号码和申请编号，然后点击「查询」。',
+        en: 'Enter your IC number and reference ID, then tap "Search".',
+        zh: '输入身份证号码和申请编号，然后点击「查询」。',
       },
     ],
   },
@@ -373,7 +386,7 @@ export const assistanceForms: AssistanceForm[] = [
     progressGuide: [
       { en: 'Open the family aid portal.', zh: '进入家庭援助网站。' },
       { en: 'Choose "Check Status" from the top right green button.', zh: '点击右上角绿色按钮「查询进度」。' },
-      { en: 'Enter your phone number and reference ID.', zh: '输入电话号码和申请编号。' },
+      { en: 'Enter your IC number and reference ID.', zh: '输入身份证号码和申请编号。' },
     ],
   },
   {
@@ -431,7 +444,7 @@ export const assistanceForms: AssistanceForm[] = [
     progressGuide: [
       { en: 'Open the health support portal.', zh: '进入健康支援网站。' },
       { en: 'Tap "Status" on the top right green square button.', zh: '点击右上角绿色方形按钮「进度」。' },
-      { en: 'Use your phone number and reference ID to search.', zh: '使用电话号码和申请编号查询。' },
+      { en: 'Use your IC number and reference ID to search.', zh: '使用身份证号码和申请编号查询。' },
     ],
   },
   {
@@ -482,7 +495,7 @@ export const assistanceForms: AssistanceForm[] = [
     progressGuide: [
       { en: 'Open the housing assistance portal.', zh: '进入住房援助网站。' },
       { en: 'Tap the green "My Application" button at the top right.', zh: '点击右上角绿色「我的申请」按钮。' },
-      { en: 'Enter phone number, postcode, and reference ID to check status.', zh: '输入电话号码、邮编和申请编号查询进度。' },
+      { en: 'Enter IC number, postcode, and reference ID to check status.', zh: '输入身份证号码、邮编和申请编号查询进度。' },
     ],
   },
 ];
@@ -646,23 +659,145 @@ export function localizeForm(form: AssistanceForm, language: AssistantLanguage):
   };
 }
 
-export function searchAssistanceForms(profile: ApplicantProfile, language: AssistantLanguage): SearchResult[] {
+const situationKeywords: Record<string, string[]> = {
+  'senior-living-support': [
+    'senior',
+    'elderly',
+    'older',
+    'old',
+    'living',
+    'daily',
+    'food',
+    'income',
+    'money',
+    'warga emas',
+    '生活',
+    '老人',
+    '长者',
+    '乐龄',
+    '收入',
+  ],
+  'single-parent-family-aid': [
+    'single parent',
+    'single',
+    'child',
+    'children',
+    'dependant',
+    'guardian',
+    'widow',
+    'divorce',
+    'family',
+    '单亲',
+    '孩子',
+    '离婚',
+    '抚养',
+  ],
+  'medical-mobility-grant': [
+    'medical',
+    'medicine',
+    'hospital',
+    'disability',
+    'wheelchair',
+    'mobility',
+    'health',
+    'doctor',
+    '病',
+    '医疗',
+    '残障',
+    '轮椅',
+    '行动',
+    '健康',
+  ],
+  'rental-utility-relief': [
+    'rent',
+    'rental',
+    'utility',
+    'water',
+    'electric',
+    'bill',
+    'housing',
+    'landlord',
+    'house',
+    'sewa',
+    '租',
+    '水电',
+    '电费',
+    '房租',
+    '屋',
+  ],
+};
+
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+const situationStopWords = new Set([
+  'need',
+  'help',
+  'and',
+  'the',
+  'for',
+  'with',
+  'pay',
+  'paying',
+  'apply',
+  'application',
+  'form',
+  'want',
+  'please',
+  'saya',
+  'perlukan',
+  'bantuan',
+]);
+
+function situationScore(form: AssistanceForm, localizedForm: LocalizedForm, situation?: string) {
+  const text = normalizeSearchText(situation ?? '');
+  if (!text) return 0;
+
+  const haystack = normalizeSearchText(
+    [
+      localizedForm.title,
+      localizedForm.agency,
+      localizedForm.category,
+      localizedForm.description,
+      localizedForm.simpleExplanation,
+      ...localizedForm.keyConditions,
+      ...localizedForm.legalNotes,
+    ].join(' '),
+  );
+  const haystackTokens = new Set(haystack.split(' '));
+  const tokens = Array.from(new Set(text.split(' ').filter((token) => token.length >= 3 && !situationStopWords.has(token))));
+  const tokenScore = tokens.filter((token) => (/^[a-z0-9]+$/i.test(token) ? haystackTokens.has(token) : haystack.includes(token))).length;
+  const keywordScore = (situationKeywords[form.id] ?? []).filter((keyword) => text.includes(keyword.toLowerCase())).length * 4;
+
+  return tokenScore + keywordScore;
+}
+
+export function searchAssistanceForms(profile: ApplicantProfile, language: AssistantLanguage, situation?: string): SearchResult[] {
   const evaluated = assistanceForms
-    .map((form) => ({
-      form: localizeForm(form, language),
-      ...evaluateForm(form, profile, language),
-    }))
+    .map((form) => {
+      const localizedForm = localizeForm(form, language);
+      return {
+        form: localizedForm,
+        situationScore: situationScore(form, localizedForm, situation),
+        ...evaluateForm(form, profile, language),
+      };
+    })
     .sort((a, b) => {
       const statusRank: Record<EligibilityStatus, number> = {
         likely: 3,
         'needs-info': 2,
         'not-likely': 1,
       };
-      return statusRank[b.status] - statusRank[a.status] || b.score - a.score;
+      return b.situationScore - a.situationScore || statusRank[b.status] - statusRank[a.status] || b.score - a.score;
     });
 
-  const useful = evaluated.filter((item) => item.status !== 'not-likely');
-  return useful.length > 0 ? useful : evaluated.slice(0, 2);
+  if (situation?.trim()) {
+    const situationMatches = evaluated.filter((item) => item.situationScore > 0 && item.status !== 'not-likely');
+    return (situationMatches.length > 0 ? situationMatches : evaluated).slice(0, 3);
+  }
+
+  return evaluated.slice(0, 3);
 }
 
 export function getProfileFieldValue(profile: ApplicantProfile, field: Pick<ApplicationField, 'id' | 'profileKey'>) {
@@ -673,8 +808,8 @@ export function getProfileFieldValue(profile: ApplicantProfile, field: Pick<Appl
   return '';
 }
 
-function buildReferenceId(formId: string, phone: string) {
-  const suffix = phone.replace(/\D/g, '').slice(-4) || '0000';
+function buildReferenceId(formId: string, identityNumber: string) {
+  const suffix = identityNumber.replace(/\D/g, '').slice(-4) || '0000';
   const prefix = formId
     .split('-')
     .map((part) => part[0])
@@ -682,6 +817,26 @@ function buildReferenceId(formId: string, phone: string) {
     .toUpperCase()
     .slice(0, 4);
   return `${prefix}-${suffix}-${new Date().getFullYear()}`;
+}
+
+function buildSmsPreview({
+  language,
+  name,
+  formTitle,
+  referenceId,
+  progressGuide,
+}: {
+  language: AssistantLanguage;
+  name: string;
+  formTitle: string;
+  referenceId: string;
+  progressGuide: string[];
+}) {
+  const steps = progressGuide.map((step, index) => `${index + 1}. ${step}`).join(' ');
+  if (language === 'zh') {
+    return `${name || '您好'}，您的 ${formTitle} 申请草稿已完成。编号：${referenceId}。网站会安排已签署保密协议的志愿者进一步确认。查询进度：${steps}`;
+  }
+  return `Hi ${name || 'there'}, your ${formTitle} application draft is complete. Ref: ${referenceId}. A volunteer who has signed a confidentiality agreement will confirm the details. Progress check: ${steps}`;
 }
 
 export function buildApplicationPackage({
@@ -700,6 +855,7 @@ export function buildApplicationPackage({
   const form = assistanceForms.find((item) => item.id === formId) ?? assistanceForms[0];
   const localizedForm = localizeForm(form, language);
   const phone = profile.phone?.trim() || extraAnswers.phone || '-';
+  const icNumber = profile.icNumber?.trim() || extraAnswers.icNumber || '-';
   const fields = localizedForm.requiredFields
     .map((field) => {
       const value = extraAnswers[field.id]?.trim() || getProfileFieldValue(profile, field);
@@ -713,14 +869,14 @@ export function buildApplicationPackage({
     })
     .sort((a, b) => sectionOrder.indexOf(a.section) - sectionOrder.indexOf(b.section));
   const missingFields = fields.filter((field) => field.required && !field.value).map((field) => field.label);
-  const referenceId = buildReferenceId(form.id, phone);
-  const progressText = localizedForm.progressGuide.map((step, index) => `${index + 1}. ${step}`).join(' ');
+  const referenceId = buildReferenceId(form.id, icNumber);
 
   return {
     referenceId,
     form: localizedForm,
     applicantName: profile.name?.trim() || extraAnswers.name || '-',
     phone,
+    icNumber,
     fields,
     missingFields,
     consents: localizedForm.consentItems.map((label, index) => ({
@@ -731,12 +887,15 @@ export function buildApplicationPackage({
       name: language === 'zh' ? '社区志愿者确认小组' : 'Community Volunteer Verification Team',
       confidentiality:
         language === 'zh'
-          ? '志愿者在处理资料前必须签署个人资料保密与用途限制承诺书，只能为了这次申请查看资料。'
-          : 'Volunteers must sign a personal-data confidentiality and limited-use undertaking before reviewing application details.',
+          ? '志愿者在查看资料前必须签署个人资料保密与用途限制协议，只能为了这次申请确认资料，不能把资料用于其他用途。'
+          : 'Volunteers must sign a personal-data confidentiality and limited-use agreement before reviewing details. They may only use the information to confirm this application.',
     },
-    smsPreview:
-      language === 'zh'
-        ? `${profile.name || '您好'}，您的 ${localizedForm.title} 申请草稿已完成。编号：${referenceId}。志愿者会再联系您确认资料。查询进度：${progressText}`
-        : `Hi ${profile.name || 'there'}, your ${localizedForm.title} draft is complete. Ref: ${referenceId}. A volunteer will contact you to verify details. To check progress: ${progressText}`,
+    smsPreview: buildSmsPreview({
+      language,
+      name: profile.name?.trim() || extraAnswers.name || '',
+      formTitle: localizedForm.title,
+      referenceId,
+      progressGuide: localizedForm.progressGuide,
+    }),
   };
 }

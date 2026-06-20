@@ -9,7 +9,8 @@
     "dev": "next dev -p 8000",
     "build": "next build && node scripts/prepare-standalone-assets.js",
     "start": "node scripts/start-standalone.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:pipeline": "node scripts/test-pipeline.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

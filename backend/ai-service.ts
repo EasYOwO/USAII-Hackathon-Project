@@ -8,7 +8,7 @@ import type { GeminiAIResponse, Language, DialogState, UserProfile } from './typ
 import { SYSTEM_PROMPTS, generateContextPrompt } from './prompts';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 export function isGeminiConfigured() {
@@ -296,7 +296,7 @@ export class GeminiAIService {
     const mockResponses: Record<Language, Record<DialogState, GeminiAIResponse>> = {
       zh_CN: {
         INIT: {
-          reply_to_user: 'Welcome to the Government Assistance Application Assistant! I am your AI assistant. Could you please tell me your phone number so that if volunteers need to provide further assistance, they can contact you?',
+          reply_to_user: 'Welcome to the Government Assistance Application Assistant! I am your AI assistant. Could you please tell me your full name and IC number?',
           extracted_data: {},
           next_state: 'GATHER_PROFILE',
           confidence: 'High',
@@ -332,7 +332,7 @@ export class GeminiAIService {
           confidence: 'High',
         },
         COMPLETED: {
-          reply_to_user: '太好了！我已经帮您整理好了所有信息。接下来会有一位志愿者在24小时内与您联系，进一步确认细节。感谢您的配合！',
+          reply_to_user: '太好了！我已经帮您整理好这次流程的信息。流程完成后，临时文件会被清除。感谢您的配合！',
           extracted_data: {},
           confidence: 'High',
         },
@@ -375,14 +375,14 @@ export class GeminiAIService {
           confidence: 'High',
         },
         COMPLETED: {
-          reply_to_user: 'Bagus! Saya telah mengatur semua maklumat anda. Seorang sukarelawan akan menghubungi anda dalam 24 jam. Terima kasih!',
+          reply_to_user: 'Bagus! Saya telah mengatur maklumat untuk aliran ini. Dokumen sementara dipadam selepas aliran selesai. Terima kasih!',
           extracted_data: {},
           confidence: 'High',
         },
       },
       en_US: {
         INIT: {
-          reply_to_user: 'Welcome to the government assistance application assistant! I am your AI helper. May I have your phone number please?',
+          reply_to_user: 'Welcome to the government assistance application assistant! I am your AI helper. May I have your full name and IC number please?',
           extracted_data: {},
           next_state: 'GATHER_PROFILE',
           confidence: 'High',
@@ -418,7 +418,7 @@ export class GeminiAIService {
           confidence: 'High',
         },
         COMPLETED: {
-          reply_to_user: 'Great! I have organized all your information. A volunteer will contact you within 24 hours. Thank you!',
+          reply_to_user: 'Great! I have organized the information for this flow. The temporary document is cleared when the flow is complete. Thank you!',
           extracted_data: {},
           confidence: 'High',
         },

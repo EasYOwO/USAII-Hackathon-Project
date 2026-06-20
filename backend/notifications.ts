@@ -87,6 +87,10 @@ async function sendSMS(phoneNumber: string, message: string): Promise<boolean> {
   }
 }
 
+export async function sendSmsMessage(phoneNumber: string, message: string): Promise<boolean> {
+  return sendSMS(phoneNumber, message);
+}
+
 /**
  * Send email notification via SendGrid
  */
@@ -239,4 +243,5 @@ export const notificationService = {
   sendFormRecommendation,
   sendDataConfirmation,
   sendErrorNotification,
+  sendSmsMessage,
 };
