@@ -63,6 +63,7 @@ export type ElderlyChatOutput = {
 const profileFieldOrder: Array<keyof ApplicantProfile> = [
   'name',
   'phone',
+  'icNumber',
   'age',
   'state',
   'postcode',
@@ -79,7 +80,43 @@ const elderlyResponseSchema = {
   type: 'object',
   properties: {
     reply_to_user: { type: 'string' },
-    profile_updates: { type: 'object' },
+    profile_updates: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        phone: { type: 'string' },
+        icNumber: { type: 'string' },
+        age: { type: 'string' },
+        state: { type: 'string' },
+        postcode: { type: 'string' },
+        taman: { type: 'string' },
+        addressLine: { type: 'string' },
+        maritalStatus: { type: 'string' },
+        children: { type: 'string' },
+        householdIncome: { type: 'string' },
+        disability: { type: 'string' },
+        housingStatus: { type: 'string' },
+        medicalNeed: { type: 'string' },
+        rentalArrears: { type: 'string' },
+      },
+      required: [
+        'name',
+        'phone',
+        'icNumber',
+        'age',
+        'state',
+        'postcode',
+        'taman',
+        'addressLine',
+        'maritalStatus',
+        'children',
+        'householdIncome',
+        'disability',
+        'housingStatus',
+        'medicalNeed',
+        'rentalArrears',
+      ],
+    },
     phase: { type: 'string' },
     question_index: { type: 'integer' },
     quick_options: { type: 'array', items: { type: 'string' } },
@@ -91,7 +128,7 @@ const elderlyResponseSchema = {
     toggle_consent_index: { type: 'integer' },
     complete_draft: { type: 'boolean' },
   },
-  required: ['reply_to_user'],
+  required: ['reply_to_user', 'profile_updates'],
 };
 
 function toGeminiLanguage(language: AssistantLanguage) {
@@ -122,7 +159,10 @@ Current application field id: ${input.currentApplicationFieldId ?? 'none'}
 
 Rules:
 - Guide the senior through collecting profile fields, confirming name/address, matching forms, explaining a form, filling missing fields, review, consent, and completion.
-- Put extracted values in profile_updates or extra_answers.
+- Whenever the user gives personal details, put every extracted profile value in profile_updates using the exact profile field keys.
+- profile_updates must include all profile keys every time; use an empty string for unknown fields.
+- Do not only mention recorded details in reply_to_user; the same values must be present in profile_updates so the application state updates.
+- Put application-only answers in extra_answers.
 - Use quick_options for tap choices when helpful.
 - Set widget to forms, review, consent, or completion when the UI should show that block.
 - Set trigger_search true only after all profile fields are collected and confirmed.
@@ -154,6 +194,13 @@ function mapQuickOptions(options: unknown) {
     .map((option) => String(option).trim())
     .filter(Boolean)
     .map((label) => ({ label, storedValue: label }));
+}
+
+function mapWidget(widget: unknown): ElderlyChatOutput['widget'] {
+  if (widget === 'forms' || widget === 'review' || widget === 'consent' || widget === 'completion') {
+    return widget;
+  }
+  return undefined;
 }
 
 export async function processElderlyChat(input: ElderlyChatInput): Promise<ElderlyChatOutput> {
@@ -218,7 +265,7 @@ export async function processElderlyChat(input: ElderlyChatInput): Promise<Elder
     typeof aiRaw.current_field_id === 'string' ? aiRaw.current_field_id : input.currentApplicationFieldId ?? null;
   let consents = [...input.consents];
   let application: ApplicationPackage | null = null;
-  let widget = typeof aiRaw.widget === 'string' ? (aiRaw.widget as ElderlyChatOutput['widget']) : undefined;
+  let widget = mapWidget(aiRaw.widget);
 
   if (typeof aiRaw.toggle_consent_index === 'number' && aiRaw.toggle_consent_index >= 0) {
     consents[aiRaw.toggle_consent_index] = !consents[aiRaw.toggle_consent_index];

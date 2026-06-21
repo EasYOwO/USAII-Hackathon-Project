@@ -1657,6 +1657,24 @@ tr:last-child td {
   font-size: 14px;
 }
 
+.review-row-button {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  appearance: none;
+  padding: 8px 0 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-row-button:hover,
+.review-row-button:focus-visible {
+  background: var(--surface-muted);
+}
+
 .mini-icon-btn {
   display: inline-grid;
   width: 32px;

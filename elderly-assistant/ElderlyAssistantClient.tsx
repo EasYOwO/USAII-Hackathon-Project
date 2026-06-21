@@ -7,19 +7,12 @@ import { useLanguage, type AppLanguage } from '@/components/LanguageProvider';
 import { VoiceComposer } from '@/components/VoiceComposer';
 import type { ApplicantProfile, ApplicationSection, EligibilityStatus } from '@/backend/elderly/forms';
 import {
-  addressFields,
   apiLanguage,
   CONSENT_ITEMS,
   copy,
-  fieldLabels,
-  fieldOptions,
-  fieldPrompts,
-  fill,
-  profileFieldOrder,
   t,
   voiceCode,
   type Phase,
-  type ProfileField,
 } from '@/elderly-assistant/flow-text';
 
 type QuickOption = { label: string; storedValue?: string };
@@ -76,22 +69,30 @@ type ApplicationPackage = {
 
 type Answers = Record<string, string>;
 
+type AiChatResponse = {
+  aiEnabled: boolean;
+  reply?: string;
+  profile?: ApplicantProfile;
+  phase?: Phase;
+  questionIndex?: number;
+  quickOptions?: QuickOption[];
+  widget?: 'forms' | 'review' | 'consent' | 'completion';
+  results?: SearchResult[];
+  selectedFormId?: string | null;
+  extraAnswers?: Answers;
+  currentApplicationFieldId?: string | null;
+  application?: ApplicationPackage | null;
+  consents?: boolean[];
+  shouldSpeak?: boolean;
+  error?: string;
+};
+
 function speak(content: string, language: AppLanguage) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(content);
   utterance.lang = voiceCode(language);
   window.speechSynthesis.speak(utterance);
-}
-
-function isYes(value: string) {
-  const n = value.trim().toLowerCase();
-  return ['yes', 'y', 'correct', 'ok', 'true', '是', '对', '對', '正确', '正確', 'betul', 'ya'].some((x) => n.includes(x));
-}
-
-function isNo(value: string) {
-  const n = value.trim().toLowerCase();
-  return ['no', 'n', 'wrong', 'false', '不是', '不对', '不對', '错误', '錯誤', 'salah', 'tidak'].some((x) => n.includes(x));
 }
 
 function toProfile(answers: Answers): ApplicantProfile {
@@ -112,6 +113,54 @@ function toProfile(answers: Answers): ApplicantProfile {
     medicalNeed: answers.medicalNeed,
     rentalArrears: answers.rentalArrears,
   };
+}
+
+function fromProfile(profile: ApplicantProfile, previous: Answers = {}): Answers {
+  return {
+    ...previous,
+    englishName: profile.name ?? previous.englishName,
+    phone: profile.phone ?? previous.phone,
+    icNumber: profile.icNumber ?? previous.icNumber,
+    age: profile.age ?? previous.age,
+    state: profile.state ?? previous.state,
+    postcode: profile.postcode ?? previous.postcode,
+    taman: profile.taman ?? previous.taman,
+    addressLine: profile.addressLine ?? previous.addressLine,
+    maritalStatus: profile.maritalStatus ?? previous.maritalStatus,
+    children: profile.children ?? previous.children,
+    householdIncome: profile.householdIncome ?? previous.householdIncome,
+    disability: profile.disability ?? previous.disability,
+    housingStatus: profile.housingStatus ?? previous.housingStatus,
+    medicalNeed: profile.medicalNeed ?? previous.medicalNeed,
+    rentalArrears: profile.rentalArrears ?? previous.rentalArrears,
+  };
+}
+
+function phaseForAi(phase: Phase) {
+  if (
+    [
+      'greeting',
+      'phone',
+      'name',
+      'nameConfirm',
+      'nameCorrection',
+      'profileCollect',
+      'addressConfirm',
+      'situation',
+    ].includes(phase)
+  ) {
+    return 'collect';
+  }
+  if (phase === 'reviewCorrection') return 'review';
+  if (phase === 'idCapture') return 'apply';
+  return phase;
+}
+
+function widgetFromAi(widget: unknown): MessageWidget | undefined {
+  if (widget === 'forms' || widget === 'review' || widget === 'consent' || widget === 'completion') {
+    return widget;
+  }
+  return undefined;
 }
 
 function AssistantMascot() {
@@ -139,12 +188,12 @@ function statusLabel(status: EligibilityStatus, language: AppLanguage) {
 
 function aiMethodText(language: AppLanguage) {
   if (language === 'zh') {
-    return 'AI 辅助筛选：Google Gemini 3 Flash 负责理解用户资料与提炼表格重点；资格条件再用本地规则检查，避免只靠 AI 判断。';
+    return 'AI-assisted screening: Google Gemini 3 Flash Preview helps interpret user details and extract form highlights; eligibility is also checked with local rules.';
   }
   if (language === 'ms') {
-    return 'Saringan bantuan AI: Google Gemini 3 Flash memahami maklumat pengguna dan meringkaskan borang; syarat kelayakan disemak semula dengan peraturan tempatan.';
+    return 'Saringan bantuan AI: Google Gemini 3 Flash Preview memahami maklumat pengguna dan meringkaskan borang; syarat kelayakan disemak semula dengan peraturan tempatan.';
   }
-  return 'AI-assisted screening: Google Gemini 3 Flash helps interpret user details and extract form highlights; eligibility is also checked with local rules.';
+  return 'AI-assisted screening: Google Gemini 3 Flash Preview helps interpret user details and extract form highlights; eligibility is also checked with local rules.';
 }
 
 function consentSimpleText(language: AppLanguage) {
@@ -174,6 +223,7 @@ export function ElderlyAssistantClient() {
   const [consents, setConsents] = useState<boolean[]>([]);
   const [idDocumentReady, setIdDocumentReady] = useState(false);
   const [idFileName, setIdFileName] = useState('');
+  const [correctionFieldId, setCorrectionFieldId] = useState<string | null>(null);
 
   const expectsAnswer = !['searching', 'idCapture', 'complete'].includes(phase) && !loading;
   const username = answers.englishName || 'user';
@@ -187,37 +237,156 @@ export function ElderlyAssistantClient() {
     setMessages((current) => [...current, { role: 'user', content }]);
   }
 
-  function yesNoOptions(): QuickOption[] {
-    return [
-      { label: t(language, copy.yes), storedValue: 'yes' },
-      { label: t(language, copy.no), storedValue: 'no' },
-    ];
-  }
+  function applyAiResponse(
+    data: AiChatResponse,
+    base: {
+      answersState?: Answers;
+      resultsState?: SearchResult[];
+      selectedResultState?: SearchResult | null;
+      extraAnswersState?: Answers;
+      currentFieldIdState?: string | null;
+      applicationState?: ApplicationPackage | null;
+      consentsState?: boolean[];
+      questionIndexState?: number;
+      phaseState?: Phase;
+    } = {},
+  ) {
+    const baseAnswers = base.answersState ?? answers;
+    const baseResults = base.resultsState ?? results;
+    const baseSelectedResult = base.selectedResultState ?? selectedResult;
+    const baseExtraAnswers = base.extraAnswersState ?? extraAnswers;
+    const baseCurrentFieldId = base.currentFieldIdState ?? currentFieldId;
+    const baseApplication = base.applicationState ?? application;
+    const baseConsents = base.consentsState ?? consents;
+    const baseQuestionIndex = base.questionIndexState ?? profileIndex;
+    const basePhase = base.phaseState ?? phase;
+    const nextProfile = data.profile ?? toProfile(baseAnswers);
+    const nextAnswers = fromProfile(nextProfile, baseAnswers);
+    const nextResults = data.results ?? baseResults;
+    const selectedFormId = data.selectedFormId ?? baseSelectedResult?.form.id ?? null;
+    const nextSelectedResult = nextResults.find((result) => result.form.id === selectedFormId) ?? nextResults[0] ?? null;
+    const nextExtraAnswers = data.extraAnswers ?? baseExtraAnswers;
+    const nextCurrentFieldId = data.currentApplicationFieldId ?? baseCurrentFieldId;
+    const nextConsents = data.consents ?? baseConsents;
+    const nextApplication = data.application === undefined ? baseApplication : data.application;
+    let nextPhase = data.phase ?? basePhase;
+    let widget = widgetFromAi(data.widget);
 
-  function optionsForField(field: ProfileField): QuickOption[] | undefined {
-    return fieldOptions[field]?.map((option) => ({
-      label: t(language, option.label),
-      storedValue: option.storedValue,
-    }));
-  }
+    if (!widget && nextPhase === 'forms' && nextResults.length > 0) widget = 'forms';
+    if (!widget && nextPhase === 'review' && nextApplication) widget = 'review';
+    if (!widget && nextPhase === 'consent') widget = 'consent';
+    if (!widget && nextPhase === 'complete') widget = 'completion';
+    if (nextPhase === 'apply' && nextCurrentFieldId === 'documentsReady' && !idDocumentReady) {
+      nextPhase = 'idCapture';
+      widget = 'idCapture';
+    }
 
-  function askProfile(index: number) {
-    const field = profileFieldOrder[index];
-    addAssistant(t(language, fieldPrompts[field]), {
-      speak: true,
-      quickOptions: optionsForField(field),
+    setAnswers(nextAnswers);
+    setProfileIndex(data.questionIndex ?? baseQuestionIndex);
+    setResults(nextResults);
+    setSelectedResult(nextSelectedResult);
+    setExtraAnswers(nextExtraAnswers);
+    setCurrentFieldId(nextCurrentFieldId);
+    setApplication(nextApplication ?? null);
+    setConsents(nextConsents);
+    setPhase(nextPhase);
+    if (nextPhase !== 'reviewCorrection') {
+      setCorrectionFieldId(null);
+    }
+
+    addAssistant(data.reply || data.error || (language === 'zh' ? 'AI 暂时无法回应，请稍后再试。' : 'AI is temporarily unavailable.'), {
+      quickOptions: data.quickOptions,
+      widget,
+      speak: data.shouldSpeak ?? true,
     });
   }
 
-  function formatAddress(nextAnswers = answers) {
-    return [nextAnswers.addressLine, nextAnswers.taman, nextAnswers.postcode, nextAnswers.state].filter(Boolean).join(', ');
+  async function requestAiChat(
+    action: 'init' | 'message',
+    userMessage = '',
+    displayMessage = userMessage,
+    state: {
+      history?: Message[];
+      answersState?: Answers;
+      phaseState?: Phase;
+      resultsState?: SearchResult[];
+      selectedResultState?: SearchResult | null;
+      extraAnswersState?: Answers;
+      currentFieldIdState?: string | null;
+      applicationState?: ApplicationPackage | null;
+      consentsState?: boolean[];
+      questionIndexState?: number;
+      showUserMessage?: boolean;
+    } = {},
+  ) {
+    const trimmedMessage = userMessage.trim();
+    if (action === 'message' && !trimmedMessage) return;
+
+    const history = state.history ?? messages;
+    const requestAnswers = state.answersState ?? answers;
+    const requestPhase = state.phaseState ?? phase;
+    const requestResults = state.resultsState ?? results;
+    const requestSelectedResult = state.selectedResultState ?? selectedResult;
+    const requestExtraAnswers = state.extraAnswersState ?? extraAnswers;
+    const requestCurrentFieldId = state.currentFieldIdState ?? currentFieldId;
+    const requestApplication = state.applicationState ?? application;
+    const requestConsents = state.consentsState ?? consents;
+    const requestQuestionIndex = state.questionIndexState ?? profileIndex;
+
+    if (action === 'message' && state.showUserMessage !== false) {
+      addUser(displayMessage.trim() || trimmedMessage);
+    }
+    setInput('');
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/elderly/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          userMessage: trimmedMessage,
+          language: apiLanguage(language),
+          phase: phaseForAi(requestPhase),
+          profile: toProfile(requestAnswers),
+          questionIndex: requestQuestionIndex,
+          messages: history.map((message) => ({ role: message.role, content: message.content })),
+          results: requestResults,
+          selectedFormId: requestSelectedResult?.form.id ?? null,
+          extraAnswers: requestExtraAnswers,
+          currentApplicationFieldId: requestCurrentFieldId,
+          consents: requestConsents,
+        }),
+      });
+      const data = (await response.json()) as AiChatResponse;
+      if (!response.ok) {
+        throw new Error(data.error || `AI request failed with status ${response.status}`);
+      }
+      applyAiResponse(data, {
+        answersState: requestAnswers,
+        resultsState: requestResults,
+        selectedResultState: requestSelectedResult,
+        extraAnswersState: requestExtraAnswers,
+        currentFieldIdState: requestCurrentFieldId,
+        applicationState: requestApplication,
+        consentsState: requestConsents,
+        questionIndexState: requestQuestionIndex,
+        phaseState: requestPhase,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI request failed';
+      addAssistant(language === 'zh' ? `AI 暂时无法回应：${message}` : `AI is temporarily unavailable: ${message}`, { speak: true });
+    } finally {
+      setLoading(false);
+    }
   }
 
   function startFlow() {
-    const firstPrompt = `${t(language, copy.welcome)}\n\n${t(language, copy.welcomeSecond)}\n\n${t(language, copy.askPhone)}`;
-    const initialMessages: Message[] = [{ role: 'assistant', content: firstPrompt }];
+    const emptyAnswers: Answers = {};
+    const emptyResults: SearchResult[] = [];
+    const emptyExtraAnswers: Answers = {};
 
-    setPhase('phone');
+    setPhase('collect');
     setAnswers({});
     setProfileIndex(0);
     setInput('');
@@ -230,9 +399,21 @@ export function ElderlyAssistantClient() {
     setConsents([]);
     setIdDocumentReady(false);
     setIdFileName('');
+    setCorrectionFieldId(null);
     sessionStorage.setItem('elderly-flow-active', '1');
-    setMessages(initialMessages);
-    speak(firstPrompt, language);
+    setMessages([]);
+    void requestAiChat('init', '', '', {
+      history: [],
+      answersState: emptyAnswers,
+      phaseState: 'collect',
+      resultsState: emptyResults,
+      selectedResultState: null,
+      extraAnswersState: emptyExtraAnswers,
+      currentFieldIdState: null,
+      applicationState: null,
+      consentsState: [],
+      showUserMessage: false,
+    });
   }
 
   useEffect(() => {
@@ -241,118 +422,6 @@ export function ElderlyAssistantClient() {
     initializedLang.current = language;
     startFlow();
   }, [hasChosenLanguage, language]);
-
-  function getKnownFieldValue(
-    field: LocalizedForm['requiredFields'][number],
-    extra = extraAnswers,
-    idReady = idDocumentReady,
-    fileName = idFileName,
-  ) {
-    if (extra[field.id]?.trim()) return extra[field.id].trim();
-    if (field.id === 'documentsReady' && idReady) return `ID document: ${fileName || 'ready'}`;
-    if (field.profileKey === 'name') return answers.englishName?.trim() ?? '';
-    if (field.profileKey) return answers[field.profileKey]?.trim() ?? '';
-    return answers[field.id]?.trim() ?? '';
-  }
-
-  function nextApplicationField(extra = extraAnswers, idReady = idDocumentReady, fileName = idFileName) {
-    return selectedResult?.form.requiredFields.find((field) => field.required && !getKnownFieldValue(field, extra, idReady, fileName)) ?? null;
-  }
-
-  function askApplicationField(field: LocalizedForm['requiredFields'][number]) {
-    setPhase('apply');
-    setCurrentFieldId(field.id);
-    addAssistant(field.question, {
-      speak: true,
-      quickOptions: field.options?.map((option) => ({ label: option.label, storedValue: option.label })),
-    });
-  }
-
-  function continueApplication(extra = extraAnswers, idReady = idDocumentReady, fileName = idFileName) {
-    if (!idReady) {
-      setPhase('idCapture');
-      addAssistant(t(language, copy.idCaptureIntro), { speak: true, widget: 'idCapture' });
-      return;
-    }
-
-    const field = nextApplicationField(extra, idReady, fileName);
-    if (field) {
-      askApplicationField(field);
-      return;
-    }
-
-    void buildReview(extra, idReady, fileName);
-  }
-
-  async function searchForms(nextAnswers: Answers) {
-    setLoading(true);
-    setPhase('searching');
-    addAssistant(t(language, copy.searching), { speak: true });
-
-    const response = await fetch('/api/elderly/forms/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profile: toProfile(nextAnswers), language: apiLanguage(language) }),
-    });
-    const data = (await response.json()) as { results: SearchResult[] };
-    const topResults = data.results.slice(0, 3);
-
-    setResults(topResults);
-    setSelectedResult(topResults[0] ?? null);
-    setPhase('forms');
-    setLoading(false);
-    addAssistant(
-      topResults.length > 0 ? fill(t(language, copy.foundForms), { count: topResults.length }) : t(language, copy.noForms),
-      {
-        speak: true,
-        widget: topResults.length > 0 ? 'forms' : undefined,
-        quickOptions: topResults.map((result, index) => ({ label: `${index + 1}. ${result.form.title}`, storedValue: String(index + 1) })),
-      },
-    );
-  }
-
-  async function buildReview(extra = extraAnswers, idReady = idDocumentReady, fileName = idFileName) {
-    if (!selectedResult) return;
-    setLoading(true);
-
-    const reviewExtraAnswers = {
-      ...extra,
-      documentsReady: idReady ? `ID document: ${fileName || 'ready'}` : '',
-      situation: answers.situation ?? '',
-    };
-    const response = await fetch('/api/elderly/application', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        formId: selectedResult.form.id,
-        profile: toProfile(answers),
-        extraAnswers: reviewExtraAnswers,
-        consents,
-        language: apiLanguage(language),
-      }),
-    });
-    const data = (await response.json()) as { application: ApplicationPackage };
-
-    setApplication(data.application);
-    setPhase('review');
-    setLoading(false);
-    addAssistant(t(language, copy.reviewReady), { widget: 'review', quickOptions: yesNoOptions(), speak: true });
-  }
-
-  function buildExplanation(result: SearchResult) {
-    const conditions = result.form.keyConditions.map((condition, index) => `${index + 1}. ${condition}`).join('\n');
-    const legalNotes = result.form.legalNotes.map((note, index) => `${index + 1}. ${note}`).join('\n');
-    const matchedReasons = result.matchedReasons?.length
-      ? result.matchedReasons.map((reason, index) => `${index + 1}. ${reason}`).join('\n')
-      : language === 'zh'
-        ? '1. 系统会根据您刚才提供的基本资料继续核对。'
-        : '1. The system will continue checking against the basic details you provided.';
-    const heading =
-      language === 'zh'
-        ? `${result.form.title}\n\nAI 提炼摘要（Google Gemini 3 Flash）：${result.form.simpleExplanation}\n\n资格判断：${statusLabel(result.status, language)}\n\n为什么推荐：\n${matchedReasons}\n\n申请资格重点：\n${conditions}\n\n重要说明：\n${legalNotes}`
-        : `${result.form.title}\n\nAI-extracted summary (Google Gemini 3 Flash): ${result.form.simpleExplanation}\n\nEligibility check: ${statusLabel(result.status, language)}\n\nWhy this was recommended:\n${matchedReasons}\n\nKey eligibility points:\n${conditions}\n\nImportant notes:\n${legalNotes}`;
-    return heading;
-  }
 
   async function completeFlow() {
     if (!application) return;
@@ -386,156 +455,159 @@ export function ElderlyAssistantClient() {
     return selectedResult?.form.consentItems.length ? selectedResult.form.consentItems : CONSENT_ITEMS[language];
   }
 
-  function submitAnswer(displayValue: string, storedValue = displayValue) {
-    const value = storedValue.trim();
-    if (!value || loading) return;
-    if (phase === 'idCapture' && !idDocumentReady) return;
+  function yesNoOptions(): QuickOption[] {
+    return [
+      { label: t(language, copy.yes), storedValue: 'yes' },
+      { label: t(language, copy.no), storedValue: 'no' },
+    ];
+  }
 
+  function isYesResponse(value: string) {
+    const normalized = value.trim().toLowerCase();
+    return ['yes', 'y', 'correct', 'ok', 'true', 'betul', 'ya'].some((item) => normalized.includes(item));
+  }
+
+  function isNoResponse(value: string) {
+    const normalized = value.trim().toLowerCase();
+    return ['no', 'n', 'wrong', 'false', 'salah', 'tidak'].some((item) => normalized.includes(item));
+  }
+
+  function reviewFieldOptions(): QuickOption[] {
+    return (
+      application?.fields.map((field) => ({
+        label: field.label,
+        storedValue: field.id,
+      })) ?? []
+    );
+  }
+
+  function findReviewField(value: string) {
+    const normalized = value.trim().toLowerCase();
+    return application?.fields.find((field) => field.id === value || field.label.toLowerCase() === normalized) ?? null;
+  }
+
+  function getAnswerKey(profileKey?: keyof ApplicantProfile) {
+    if (!profileKey) return null;
+    return profileKey === 'name' ? 'englishName' : profileKey;
+  }
+
+  async function rebuildReview(nextAnswers: Answers, nextExtraAnswers: Answers, updatedLabel: string) {
+    if (!selectedResult) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/elderly/application', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formId: selectedResult.form.id,
+          profile: toProfile(nextAnswers),
+          extraAnswers: nextExtraAnswers,
+          consents,
+          language: apiLanguage(language),
+        }),
+      });
+      const data = (await response.json()) as { application: ApplicationPackage };
+      setAnswers(nextAnswers);
+      setExtraAnswers(nextExtraAnswers);
+      setApplication(data.application);
+      setCorrectionFieldId(null);
+      setPhase('review');
+      addAssistant(`I updated ${updatedLabel}. Please check the draft again.`, {
+        quickOptions: yesNoOptions(),
+        widget: 'review',
+        speak: true,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'review rebuild failed';
+      addAssistant(`I could not update the draft yet. ${message}`, { speak: true });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyReviewCorrection(fieldId: string, value: string) {
+    const reviewField = application?.fields.find((field) => field.id === fieldId);
+    const formField = selectedResult?.form.requiredFields.find((field) => field.id === fieldId);
+    if (!reviewField) return;
+
+    const nextAnswers = { ...answers };
+    const nextExtraAnswers = { ...extraAnswers };
+    const answerKey = getAnswerKey(formField?.profileKey);
+
+    if (answerKey) {
+      nextAnswers[answerKey] = value;
+    } else {
+      nextExtraAnswers[fieldId] = value;
+    }
+
+    await rebuildReview(nextAnswers, nextExtraAnswers, reviewField.label);
+  }
+
+  async function handleReviewAnswer(displayValue: string, storedValue: string) {
+    const value = storedValue.trim();
     addUser(displayValue.trim());
     setInput('');
 
-    if (phase === 'phone') {
-      setAnswers((current) => ({ ...current, phone: value }));
-      setPhase('name');
-      addAssistant(t(language, copy.askName), { speak: true });
-      return;
-    }
-
-    if (phase === 'name') {
-      setAnswers((current) => ({ ...current, englishName: value }));
-      setPhase('nameConfirm');
-      addAssistant(fill(t(language, copy.nameConfirm), { value }), { speak: true, quickOptions: yesNoOptions() });
-      return;
-    }
-
-    if (phase === 'nameConfirm') {
-      if (isYes(value)) {
-        setPhase('profileCollect');
-        setProfileIndex(0);
-        askProfile(0);
-        return;
-      }
-      if (isNo(value)) {
-        setPhase('nameCorrection');
-        addAssistant(t(language, copy.spellName), { speak: true });
-        return;
-      }
-      addAssistant(language === 'zh' ? '请说正确或错误。' : 'Please say correct or wrong.', { quickOptions: yesNoOptions() });
-      return;
-    }
-
-    if (phase === 'nameCorrection') {
-      setAnswers((current) => ({ ...current, englishName: value }));
-      setPhase('nameConfirm');
-      addAssistant(fill(t(language, copy.nameConfirm), { value }), { speak: true, quickOptions: yesNoOptions() });
-      return;
-    }
-
-    if (phase === 'profileCollect') {
-      const field = profileFieldOrder[profileIndex];
-      const next = { ...answers, [field]: value };
-      setAnswers(next);
-      const nextIndex = profileIndex + 1;
-
-      if (field === 'addressLine') {
-        setPhase('addressConfirm');
-        addAssistant(fill(t(language, copy.addressConfirm), { value: formatAddress(next) }), { speak: true, quickOptions: yesNoOptions() });
+    if (phase === 'review') {
+      if (isYesResponse(value)) {
+        const items = consentItems();
+        setConsents(items.map(() => false));
+        setCorrectionFieldId(null);
+        setPhase('consent');
+        addAssistant(t(language, copy.consentAsk), { widget: 'consent', speak: true });
         return;
       }
 
-      if (nextIndex < profileFieldOrder.length) {
-        setProfileIndex(nextIndex);
-        askProfile(nextIndex);
+      if (isNoResponse(value)) {
+        setCorrectionFieldId(null);
+        setPhase('reviewCorrection');
+        addAssistant(t(language, copy.correctionAsk), {
+          quickOptions: reviewFieldOptions(),
+          widget: 'review',
+          speak: true,
+        });
         return;
       }
 
-      void searchForms(next);
-      return;
-    }
-
-    if (phase === 'addressConfirm') {
-      if (isYes(value)) {
-        const nextIndex = profileFieldOrder.findIndex((field) => field === 'maritalStatus');
-        setPhase('profileCollect');
-        setProfileIndex(nextIndex);
-        askProfile(nextIndex);
-        return;
-      }
-      if (isNo(value)) {
-        const nextIndex = profileFieldOrder.findIndex((field) => field === addressFields[0]);
-        setPhase('profileCollect');
-        setProfileIndex(nextIndex);
-        addAssistant(t(language, copy.addressRetry), { speak: true });
-        askProfile(nextIndex);
-        return;
-      }
-      addAssistant(language === 'zh' ? '请说正确或错误。' : 'Please say correct or wrong.', { quickOptions: yesNoOptions() });
-      return;
-    }
-
-    if (phase === 'situation') {
-      const next = { ...answers, situation: value };
-      setAnswers(next);
-      void searchForms(next);
-      return;
-    }
-
-    if (phase === 'forms') {
-      const index = Number(value) - 1;
-      const result = results[index] ?? results.find((item) => item.form.title.toLowerCase().includes(value.toLowerCase()));
-      if (!result) return;
-      setSelectedResult(result);
-      setPhase('explain');
-      addAssistant(`${buildExplanation(result)}\n\n${t(language, copy.continueForm)}`, {
+      addAssistant('Please choose Correct / Yes or Wrong / No.', {
         quickOptions: yesNoOptions(),
+        widget: 'review',
         speak: true,
       });
       return;
     }
 
-    if (phase === 'explain') {
-      if (isNo(value)) {
-        setPhase('forms');
-        addAssistant(language === 'zh' ? '请选择另一份表格。' : 'Please choose another form.', {
-          widget: 'forms',
-          quickOptions: results.map((result, index) => ({ label: `${index + 1}. ${result.form.title}`, storedValue: String(index + 1) })),
+    if (!correctionFieldId) {
+      const field = findReviewField(value);
+      if (!field) {
+        addAssistant('Which detail should I change?', {
+          quickOptions: reviewFieldOptions(),
+          widget: 'review',
+          speak: true,
         });
         return;
       }
-      if (isYes(value)) {
-        continueApplication();
-      }
+
+      setCorrectionFieldId(field.id);
+      addAssistant(`Please type the correct value for ${field.label}.`, { speak: true });
       return;
     }
 
-    if (phase === 'apply') {
-      const nextExtra = { ...extraAnswers, [currentFieldId ?? 'field']: value };
-      setExtraAnswers(nextExtra);
-      continueApplication(nextExtra);
+    await applyReviewCorrection(correctionFieldId, value);
+  }
+
+  function submitAnswer(displayValue: string, storedValue = displayValue) {
+    const value = storedValue.trim();
+    if (!value || loading) return;
+    if (phase === 'idCapture' && !idDocumentReady) return;
+
+    if (phase === 'review' || phase === 'reviewCorrection') {
+      void handleReviewAnswer(displayValue, value);
       return;
     }
 
-    if (phase === 'review') {
-      if (isYes(value)) {
-        const items = consentItems();
-        setConsents(items.map(() => false));
-        setPhase('consent');
-        addAssistant(t(language, copy.consentAsk), { widget: 'consent', speak: true });
-        return;
-      }
-      if (isNo(value)) {
-        setPhase('reviewCorrection');
-        addAssistant(t(language, copy.correctionAsk), { speak: true });
-      }
-      return;
-    }
-
-    if (phase === 'reviewCorrection') {
-      const nextExtra = { ...extraAnswers, reviewCorrection: value };
-      setExtraAnswers(nextExtra);
-      void buildReview(nextExtra);
-      return;
-    }
+    void requestAiChat('message', value, displayValue);
   }
 
   function onIdComplete(fileName: string) {
@@ -552,7 +624,16 @@ export function ElderlyAssistantClient() {
           : `The ID photos were automatically converted into a PDF: ${fileName}.`,
       { speak: true },
     );
-    continueApplication(nextExtra, true, fileName);
+    void requestAiChat(
+      'message',
+      `ID document captured and saved as ${fileName}. Please continue the application.`,
+      'ID document is ready',
+      {
+        extraAnswersState: nextExtra,
+        currentFieldIdState: 'documentsReady',
+        phaseState: 'apply',
+      },
+    );
   }
 
   function renderForms() {
@@ -593,12 +674,19 @@ export function ElderlyAssistantClient() {
           <span>{language === 'zh' ? '申请编号' : 'Reference'}</span>
           <strong>{application.referenceId}</strong>
         </div>
-        {application.fields.map((field) => (
-          <div className="review-row" key={field.id}>
-            <span>{field.label}</span>
-            <strong>{field.value || '-'}</strong>
-          </div>
-        ))}
+        {application.fields.map((field) =>
+          phase === 'reviewCorrection' && !correctionFieldId ? (
+            <button className="review-row review-row-button" key={field.id} type="button" onClick={() => submitAnswer(field.label, field.id)}>
+              <span>{field.label}</span>
+              <strong>{field.value || '-'}</strong>
+            </button>
+          ) : (
+            <div className="review-row" key={field.id}>
+              <span>{field.label}</span>
+              <strong>{field.value || '-'}</strong>
+            </div>
+          ),
+        )}
         {application.missingFields.length > 0 ? <div className="notice">{application.missingFields.join(', ')}</div> : null}
       </div>
     );

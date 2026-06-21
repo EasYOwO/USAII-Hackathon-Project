@@ -9,7 +9,7 @@ import { SYSTEM_PROMPTS, generateContextPrompt } from './prompts';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export function isGeminiConfigured() {
   return Boolean(GEMINI_API_KEY?.trim());
@@ -37,6 +37,36 @@ export class GeminiAIService {
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || GEMINI_API_KEY || '';
     this.model = model || GEMINI_MODEL;
+  }
+
+  private getGenerateContentUrl() {
+    const model = this.model.trim().replace(/^["']|["']$/g, '');
+    return `${GEMINI_API_BASE_URL}/${model}:generateContent?key=${this.apiKey}`;
+  }
+
+  private async postGenerateContent(requestBody: unknown) {
+    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    let lastError = '';
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await fetch(this.getGenerateContentUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (response.ok) return response;
+
+      lastError = await response.text();
+      if (!retryableStatuses.has(response.status) || attempt === 2) {
+        console.error('Gemini API Error:', lastError);
+        throw new Error(`Gemini API error: ${response.status} ${lastError}`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
+    }
+
+    throw new Error(`Gemini API error: ${lastError || 'request failed'}`);
   }
 
   /**
@@ -85,17 +115,7 @@ export class GeminiAIService {
         },
       };
 
-      const response = await fetch(`${GEMINI_API_URL}?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('Gemini API Error:', error);
-        throw new Error(`Gemini API error: ${response.status}`);
-      }
+      const response = await this.postGenerateContent(requestBody);
 
       const data = await response.json();
       const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -121,26 +141,17 @@ export class GeminiAIService {
       throw new Error('Gemini API key is not configured');
     }
 
-    const response = await fetch(`${GEMINI_API_URL}?key=${this.apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.4,
+    const response = await this.postGenerateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
         },
-      }),
+      ],
+      generationConfig: {
+        temperature: 0.4,
+      },
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Gemini API error: ${response.status} ${error}`);
-    }
 
     const data = await response.json();
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
@@ -162,32 +173,23 @@ export class GeminiAIService {
       throw new Error('Gemini API key is not configured');
     }
 
-    const response = await fetch(`${GEMINI_API_URL}?key=${this.apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: systemPrompt }],
-          },
-          ...messages.map((msg) => ({
-            role: msg.role === 'model' ? 'model' : 'user',
-            parts: msg.parts,
-          })),
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema,
-          temperature: 0.3,
+    const response = await this.postGenerateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: systemPrompt }],
         },
-      }),
+        ...messages.map((msg) => ({
+          role: msg.role === 'model' ? 'model' : 'user',
+          parts: msg.parts,
+        })),
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema,
+        temperature: 0.3,
+      },
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Gemini API error: ${response.status} ${error}`);
-    }
 
     const data = await response.json();
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -252,15 +254,7 @@ export class GeminiAIService {
         },
       };
 
-      const response = await fetch(`${GEMINI_API_URL}?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        return this.getMockResponse(language, state);
-      }
+      const response = await this.postGenerateContent(requestBody);
 
       const data = await response.json();
       const content = data.candidates?.[0]?.content?.parts?.[0]?.text;

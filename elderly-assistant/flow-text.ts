@@ -2,6 +2,11 @@ import type { AppLanguage } from '@/components/LanguageProvider';
 import type { AssistantLanguage } from '@/backend/elderly/forms';
 
 export type Phase =
+  | 'language'
+  | 'collect'
+  | 'confirmName'
+  | 'confirmAddress'
+  | 'addressFix'
   | 'greeting'
   | 'phone'
   | 'name'
@@ -184,9 +189,9 @@ export const copy = {
     ms: 'Tiada borang yang sesuai dijumpai dalam storan kami buat masa ini.',
   } satisfies LocalCopy,
   foundForms: {
-    en: 'I found {count} recommended form types. AI used: Google Gemini 3 Flash, with rule checks for eligibility. You can say the number or tap one.',
-    zh: '我筛选出 {count} 种推荐表格。使用的 AI：Google Gemini 3 Flash，并配合资格规则检查。您可以说号码或点击选择。',
-    ms: 'Saya jumpa {count} jenis borang cadangan. AI digunakan: Google Gemini 3 Flash, bersama semakan peraturan kelayakan. Anda boleh sebut nombor atau tekan pilihan.',
+    en: 'I found {count} recommended form types. AI used: Google Gemini 3 Flash Preview, with rule checks for eligibility. You can say the number or tap one.',
+    zh: '我筛选出 {count} 种推荐表格。使用的 AI：Google Gemini 3 Flash Preview，并配合资格规则检查。您可以说号码或点击选择。',
+    ms: 'Saya jumpa {count} jenis borang cadangan. AI digunakan: Google Gemini 3 Flash Preview, bersama semakan peraturan kelayakan. Anda boleh sebut nombor atau tekan pilihan.',
   } satisfies LocalCopy,
   continueForm: {
     en: 'Would you like to continue with this form?',
