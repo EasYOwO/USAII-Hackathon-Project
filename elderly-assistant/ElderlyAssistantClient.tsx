@@ -206,6 +206,25 @@ function consentSimpleText(language: AppLanguage) {
   return 'Simple version: confirm the information is truthful; allow eligibility and document checks; details will be reviewed before official submission.';
 }
 
+function modelLoadingText(language: AppLanguage) {
+  if (language === 'zh') {
+    return {
+      title: 'AI 模型加载中',
+      detail: '正在准备 Gemini 3 Flash Preview',
+    };
+  }
+  if (language === 'ms') {
+    return {
+      title: 'Model AI sedang dimuatkan',
+      detail: 'Menyediakan Gemini 3 Flash Preview',
+    };
+  }
+  return {
+    title: 'Loading AI model',
+    detail: 'Preparing Gemini 3 Flash Preview',
+  };
+}
+
 export function ElderlyAssistantClient() {
   const { language, hasChosenLanguage } = useLanguage();
   const initializedLang = useRef<AppLanguage | null>(null);
@@ -224,6 +243,8 @@ export function ElderlyAssistantClient() {
   const [idDocumentReady, setIdDocumentReady] = useState(false);
   const [idFileName, setIdFileName] = useState('');
   const [correctionFieldId, setCorrectionFieldId] = useState<string | null>(null);
+  const [aiStarted, setAiStarted] = useState(false);
+  const [showLoadingBubble, setShowLoadingBubble] = useState(false);
 
   const expectsAnswer = !['searching', 'idCapture', 'complete'].includes(phase) && !loading;
   const username = answers.englishName || 'user';
@@ -290,6 +311,7 @@ export function ElderlyAssistantClient() {
     setApplication(nextApplication ?? null);
     setConsents(nextConsents);
     setPhase(nextPhase);
+    setAiStarted(true);
     if (nextPhase !== 'reviewCorrection') {
       setCorrectionFieldId(null);
     }
@@ -317,6 +339,7 @@ export function ElderlyAssistantClient() {
       consentsState?: boolean[];
       questionIndexState?: number;
       showUserMessage?: boolean;
+      showLoadingBubble?: boolean;
     } = {},
   ) {
     const trimmedMessage = userMessage.trim();
@@ -337,6 +360,7 @@ export function ElderlyAssistantClient() {
       addUser(displayMessage.trim() || trimmedMessage);
     }
     setInput('');
+    setShowLoadingBubble(state.showLoadingBubble !== false);
     setLoading(true);
 
     try {
@@ -378,14 +402,11 @@ export function ElderlyAssistantClient() {
       addAssistant(language === 'zh' ? `AI 暂时无法回应：${message}` : `AI is temporarily unavailable: ${message}`, { speak: true });
     } finally {
       setLoading(false);
+      setShowLoadingBubble(false);
     }
   }
 
   function startFlow() {
-    const emptyAnswers: Answers = {};
-    const emptyResults: SearchResult[] = [];
-    const emptyExtraAnswers: Answers = {};
-
     setPhase('collect');
     setAnswers({});
     setProfileIndex(0);
@@ -400,9 +421,22 @@ export function ElderlyAssistantClient() {
     setIdDocumentReady(false);
     setIdFileName('');
     setCorrectionFieldId(null);
+    setAiStarted(false);
     sessionStorage.setItem('elderly-flow-active', '1');
     setMessages([]);
-    void requestAiChat('init', '', '', {
+    requestInitialAi();
+  }
+
+  function requestInitialAi(userMessage = '', displayMessage = userMessage) {
+    const emptyAnswers: Answers = {};
+    const emptyResults: SearchResult[] = [];
+    const emptyExtraAnswers: Answers = {};
+    const firstMessage = userMessage.trim();
+    const action: 'init' | 'message' = firstMessage ? 'message' : 'init';
+
+    setAiStarted(true);
+    setMessages([]);
+    void requestAiChat(action, firstMessage, displayMessage, {
       history: [],
       answersState: emptyAnswers,
       phaseState: 'collect',
@@ -412,7 +446,8 @@ export function ElderlyAssistantClient() {
       currentFieldIdState: null,
       applicationState: null,
       consentsState: [],
-      showUserMessage: false,
+      showUserMessage: action === 'message',
+      showLoadingBubble: action !== 'init',
     });
   }
 
@@ -600,6 +635,12 @@ export function ElderlyAssistantClient() {
   function submitAnswer(displayValue: string, storedValue = displayValue) {
     const value = storedValue.trim();
     if (!value || loading) return;
+
+    if (!aiStarted) {
+      requestInitialAi(value, displayValue);
+      return;
+    }
+
     if (phase === 'idCapture' && !idDocumentReady) return;
 
     if (phase === 'review' || phase === 'reviewCorrection') {
@@ -754,6 +795,8 @@ export function ElderlyAssistantClient() {
 
   const hasAssistantOnScreen = screenMessages.some(({ message }) => message.role === 'assistant');
   const allConsentsAccepted = consentItems().every((_, index) => consents[index]);
+  const initialModelLoading = loading && !showLoadingBubble && messages.length === 0;
+  const modelLoadCopy = modelLoadingText(language);
 
   return (
     <div className="elderly-workspace ui-sample-layout">
@@ -769,24 +812,35 @@ export function ElderlyAssistantClient() {
         </div>
         <div className="wa-stream">
           <div className="assistant-screen">
-          {hasAssistantOnScreen ? <AssistantMascot /> : null}
-          {screenMessages.map(({ message, index }) => (
-            <div className={`assistant-message-block ${message.role === 'user' ? 'from-user' : 'from-assistant'}`} key={`${message.role}-${index}`}>
-              <div className={`wa-bubble ${message.role === 'user' ? 'user' : ''}`}>{message.content}</div>
-              {message.quickOptions && message.widget !== 'forms' ? (
-                <div className="quick-options">
-                  {message.quickOptions.map((option) => (
-                    <button
-                      className={`chip-button ${option.storedValue === 'yes' ? 'success' : option.storedValue === 'no' ? 'danger' : ''}`}
-                      key={`${option.label}-${option.storedValue ?? option.label}`}
-                      type="button"
-                      onClick={() => submitAnswer(option.label, option.storedValue ?? option.label)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+            {initialModelLoading ? (
+              <div className="model-load-panel" role="status" aria-live="polite">
+                <div className="model-load-copy">
+                  <strong>{modelLoadCopy.title}</strong>
+                  <span>{modelLoadCopy.detail}</span>
                 </div>
-              ) : null}
+                <div className="model-load-bar" aria-hidden="true">
+                  <span />
+                </div>
+              </div>
+            ) : null}
+            {hasAssistantOnScreen ? <AssistantMascot /> : null}
+            {screenMessages.map(({ message, index }) => (
+              <div className={`assistant-message-block ${message.role === 'user' ? 'from-user' : 'from-assistant'}`} key={`${message.role}-${index}`}>
+                <div className={`wa-bubble ${message.role === 'user' ? 'user' : ''}`}>{message.content}</div>
+                {message.quickOptions && message.widget !== 'forms' ? (
+                  <div className="quick-options">
+                    {message.quickOptions.map((option) => (
+                      <button
+                        className={`chip-button ${option.storedValue === 'yes' ? 'success' : option.storedValue === 'no' ? 'danger' : ''}`}
+                        key={`${option.label}-${option.storedValue ?? option.label}`}
+                        type="button"
+                        onClick={() => submitAnswer(option.label, option.storedValue ?? option.label)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               {message.widget === 'idCapture' && phase === 'idCapture' ? (
                 <IdDocumentCapture
                   username={username}
@@ -811,7 +865,7 @@ export function ElderlyAssistantClient() {
               {message.widget === 'completion' ? renderCompletion() : null}
             </div>
           ))}
-          {loading ? <div className="wa-bubble">{language === 'zh' ? '处理中...' : 'Working...'}</div> : null}
+          {loading && showLoadingBubble ? <div className="wa-bubble">{language === 'zh' ? '处理中...' : 'Working...'}</div> : null}
           </div>
         </div>
         <VoiceComposer
