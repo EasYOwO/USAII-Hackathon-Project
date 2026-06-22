@@ -1,4 +1,3 @@
-import { isGeminiQuotaError } from '@/backend/ai-service';
 import {
   isGeminiConfigured,
   processElderlyChat,
@@ -33,18 +32,7 @@ export async function POST(request: Request) {
   try {
     return Response.json(await processElderlyChat(input));
   } catch (error) {
-    if (isGeminiQuotaError(error)) {
-      console.warn('Gemini quota/rate limit reached; using elderly local fallback algorithm.');
-      return Response.json(processElderlyChatFallback(input));
-    }
-
-    const message = error instanceof Error ? error.message : 'Gemini request failed';
-    return Response.json(
-      {
-        aiEnabled: true,
-        error: language === 'zh' ? `AI 暂时无法回应，请稍后再试。（${message}）` : `AI is temporarily unavailable. (${message})`,
-      },
-      { status: 502 },
-    );
+    console.warn('Elderly AI chat failed; using local fallback algorithm.', error);
+    return Response.json(processElderlyChatFallback(input));
   }
 }

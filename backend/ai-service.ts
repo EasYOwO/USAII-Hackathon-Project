@@ -41,6 +41,35 @@ export function isGeminiQuotaError(error: unknown) {
   );
 }
 
+export function isGeminiUnavailableError(error: unknown) {
+  const status = error instanceof GeminiApiError ? error.status : undefined;
+  const text =
+    error instanceof GeminiApiError
+      ? error.responseText
+      : error instanceof Error
+        ? error.message
+        : String(error ?? '');
+  const normalized = text.toLowerCase();
+
+  return (
+    isGeminiQuotaError(error) ||
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    status === 408 ||
+    (typeof status === 'number' && status >= 500) ||
+    normalized.includes('api key') ||
+    normalized.includes('not configured') ||
+    normalized.includes('permission') ||
+    normalized.includes('unauthorized') ||
+    normalized.includes('forbidden') ||
+    normalized.includes('invalid') ||
+    normalized.includes('unavailable') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('network')
+  );
+}
+
 export function isGeminiConfigured() {
   return Boolean(GEMINI_API_KEY?.trim());
 }

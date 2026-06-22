@@ -1,6 +1,6 @@
 import { answerElderlyQuestion, answerElderlyQuestionWithAI } from '@/backend/elderly/ask';
 import { isGeminiConfigured } from '@/backend/elderly/chatbot';
-import { isGeminiQuotaError } from '@/backend/ai-service';
+import { isGeminiUnavailableError } from '@/backend/ai-service';
 import type { ApplicantProfile, AssistantLanguage } from '@/backend/elderly/forms';
 
 export const runtime = 'nodejs';
@@ -42,7 +42,8 @@ export async function POST(request: Request) {
       const answer = await answerElderlyQuestionWithAI(question, language, context);
       return Response.json({ answer, aiEnabled: true });
     } catch (error) {
-      if (isGeminiQuotaError(error)) {
+      if (isGeminiUnavailableError(error)) {
+        console.warn('Gemini elderly question answering unavailable; using local fallback answer.', error);
         return Response.json({ answer: answerElderlyQuestion(question, language, context), aiEnabled: false });
       }
 

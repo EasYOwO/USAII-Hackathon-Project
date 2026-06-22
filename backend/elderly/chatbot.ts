@@ -467,7 +467,7 @@ export function processElderlyChatFallback(input: ElderlyChatInput): ElderlyChat
 
 export async function processElderlyChat(input: ElderlyChatInput): Promise<ElderlyChatOutput> {
   if (!isGeminiConfigured()) {
-    throw new Error('Gemini API key is not configured');
+    return processElderlyChatFallback(input);
   }
 
   const selectedForm =
@@ -502,17 +502,23 @@ export async function processElderlyChat(input: ElderlyChatInput): Promise<Elder
     parts: [{ text: message.content }],
   }));
 
-  const aiRaw = await geminiAIService.callGeminiElderly(
-    buildSystemPrompt(input, selectedForm),
-    [
-      ...history,
-      {
-        role: 'user',
-        parts: [{ text: userMessage }],
-      },
-    ],
-    elderlyResponseSchema,
-  );
+  let aiRaw: Record<string, unknown>;
+  try {
+    aiRaw = await geminiAIService.callGeminiElderly(
+      buildSystemPrompt(input, selectedForm),
+      [
+        ...history,
+        {
+          role: 'user',
+          parts: [{ text: userMessage }],
+        },
+      ],
+      elderlyResponseSchema,
+    );
+  } catch (error) {
+    console.warn('Gemini elderly chat unavailable; using local fallback algorithm.', error);
+    return processElderlyChatFallback(input);
+  }
 
   let profile = mergeProfile(input.profile, aiRaw.profile_updates as Record<string, unknown> | undefined);
   let phase = (typeof aiRaw.phase === 'string' ? aiRaw.phase : input.phase) as ElderlyPhase;

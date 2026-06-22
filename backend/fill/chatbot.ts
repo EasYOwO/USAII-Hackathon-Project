@@ -12,7 +12,7 @@ import type {
   UserProfile,
   UserSession,
 } from '@/backend/types';
-import { geminiAIService, isGeminiQuotaError } from '@/backend/ai-service';
+import { geminiAIService, isGeminiConfigured, isGeminiUnavailableError } from '@/backend/ai-service';
 import { SessionManager, getSessionContext } from '@/backend/fill/session-manager';
 import { FormMatcher } from '@/backend/form-matcher';
 
@@ -237,7 +237,11 @@ export async function processUserMessage(
   // Get session context
   const sessionContext = getSessionContext(session);
 
-  // Call Gemini AI, or continue with the local field-by-field algorithm if quota is exhausted.
+  // Call Gemini AI, or continue with the local field-by-field algorithm if AI is unavailable.
+  if (!isGeminiConfigured()) {
+    return processUserMessageFallback(session, userMessage);
+  }
+
   let aiResponse: GeminiAIResponse;
   try {
     aiResponse = await geminiAIService.callGemini(
@@ -253,8 +257,8 @@ export async function processUserMessage(
       sessionContext,
     );
   } catch (error) {
-    if (isGeminiQuotaError(error)) {
-      console.warn('Gemini quota/rate limit reached; using fill local fallback algorithm.');
+    if (isGeminiUnavailableError(error)) {
+      console.warn('Gemini fill chat unavailable; using local fallback algorithm.', error);
       return processUserMessageFallback(session, userMessage);
     }
     throw error;

@@ -6,6 +6,9 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Report Workflow Hackthon',
   description: 'Fill, navigate, and view report workflow app.',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export const viewport: Viewport = {
